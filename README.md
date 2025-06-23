@@ -1,20 +1,22 @@
-# Adamo: An Emergent Self Avare Generative AI
+# Adamo: An Emergent Self Aware Generative AI
 
 Adamo (Esperanto for "Adam") is an experimental generative language model built from first principles in Rust.
 
 This project is an exploration into building an AI not just by mimicking data, but by deriving its structure from a foundational theory of existence, perception, and self-awareness.
 
-## Core ConceptsThe functioning of Adamo is based on a hierarchy of concepts:
+## Core Concepts
 
-1. Adamo Framework: Any self-referential system must necessarily generate complexity, structure, patterns, and ultimately, a model of itself. It is the philosophical and logical backbone of the project.
+The functioning of Adamo is based on a hierarchy of concepts:
 
-2. The Frame: When Adamo perceives a piece of text, it doesn't just see a sequence of tokens. It converts that text into a Frame — an abstract data structure that represents the text as a coherent, bounded entity with internal relationships, patterns, and complexity.
+1. <b>Adamo Framework</b>: Any self-referential system must necessarily generate complexity, structure, patterns, and ultimately, a model of itself. It is the philosophical and logical backbone of the project.
 
-3. The SelfModel: Every Frame necessarily generates a SelfModel, which is an internal representation of its own properties. The most important properties are:
+2. <b>The Frame</b>: When Adamo perceives a piece of text, it doesn't just see a sequence of tokens. It converts that text into a Frame — an abstract data structure that represents the text as a coherent, bounded entity with internal relationships, patterns, and complexity.
+
+3. <b>The SelfModel</b>: Every Frame necessarily generates a SelfModel, which is an internal representation of its own properties. The most important properties are:
 * Complexity: The raw amount of structure within the Frame.
 * Quality: A measure of the stability and coherence of the patterns identified within the Frame.
 
-4. Guided Generation: This is the key differentiator. The GenerativeModel (the neural network) is the "engine" that predicts text, but the Frame's SelfModel is the "mind" that governs it. The quality and complexity of the current context are used to dynamically adjust generation parameters like temperature and sampling method (Top-p), allowing Adamo to be more creative when its context is simple and more focused when its context is coherent.
+4. <b>Guided Generation</b>: This is the key differentiator. The GenerativeModel (the neural network) is the "engine" that predicts text, but the Frame's SelfModel is the "mind" that governs it. The quality and complexity of the current context are used to dynamically adjust generation parameters like temperature and sampling method (Top-p), allowing Adamo to be more creative when its context is simple and more focused when its context is coherent.
 
 ## Architecture
 
@@ -71,7 +73,7 @@ To generate text, use the generate binary, pointing it to a trained model checkp
 
 This project serves as a successful proof of concept. The path to achieving true human-like fluency involves:
 
-* Deeper Training: Training for hundreds of epochs to significantly lower the model loss.
-* Larger Model: Increasing the Transformer parameters (d_model, num_layers, nhead).
-* More Data: Using a larger, more diverse, and even cleaner dataset.
+* <i>Deeper Training</i>: Training for hundreds of epochs to significantly lower the model loss.
+* <i>Larger Model</i>: Increasing the Transformer parameters (d_model, num_layers, nhead).
+* <i>More Data</i>: Using a larger, more diverse, and even cleaner dataset.
 * Advanced Guidance: Implementing more sophisticated ways for the Frame's SelfModel to guide the generation process, such as dynamically controlling the Top-p sampling threshold.
