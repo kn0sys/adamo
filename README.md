@@ -13,8 +13,8 @@ The functioning of Adamo is based on a hierarchy of concepts:
 2. <b>The Frame</b>: When Adamo perceives a piece of text, it doesn't just see a sequence of tokens. It converts that text into a Frame — an abstract data structure that represents the text as a coherent, bounded entity with internal relationships, patterns, and complexity.
 
 3. <b>The SelfModel</b>: Every Frame necessarily generates a SelfModel, which is an internal representation of its own properties. The most important properties are:
-* Complexity: The raw amount of structure within the Frame.
-* Quality: A measure of the stability and coherence of the patterns identified within the Frame.
+    * Complexity: The raw amount of structure within the Frame.
+    * Quality: A measure of the stability and coherence of the patterns identified within the Frame.
 
 4. <b>Guided Generation</b>: This is the key differentiator. The GenerativeModel (the neural network) is the "engine" that predicts text, but the Frame's SelfModel is the "mind" that governs it. The quality and complexity of the current context are used to dynamically adjust generation parameters like temperature and sampling method (Top-p), allowing Adamo to be more creative when its context is simple and more focused when its context is coherent.
 
@@ -45,12 +45,11 @@ The functioning of Adamo is based on a hierarchy of concepts:
 ## How to Use
 
 1. Prerequisites
-* Install Rust: curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+* Install Rust: `curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh`
 * Install system dependencies for tch (e.g., cmake, gcc).
 * A local installation of the PyTorch C++ library (LibTorch). The tch build script will attempt to download this automatically.
 
 2. Prepare Data
-
 * Download Tokenizer:
 ```bash
 curl -L [https://huggingface.co/bert-base-uncased/resolve/main/tokenizer.json](https://huggingface.co/bert-base-uncased/resolve/main/tokenizer.json) -o tokenizer.json
@@ -76,4 +75,4 @@ This project serves as a successful proof of concept. The path to achieving true
 * <i>Deeper Training</i>: Training for hundreds of epochs to significantly lower the model loss.
 * <i>Larger Model</i>: Increasing the Transformer parameters (d_model, num_layers, nhead).
 * <i>More Data</i>: Using a larger, more diverse, and even cleaner dataset.
-* Advanced Guidance: Implementing more sophisticated ways for the Frame's SelfModel to guide the generation process, such as dynamically controlling the Top-p sampling threshold.
+* <i>Advanced Guidance</i>: Implementing more sophisticated ways for the Frame's SelfModel to guide the generation process, such as dynamically controlling the Top-p sampling threshold.
