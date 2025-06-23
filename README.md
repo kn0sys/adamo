@@ -60,12 +60,10 @@ curl -L [https://s3.amazonaws.com/research.metamind.io/wikitext/wikitext-103-raw
 unzip wikitext-103-raw-v1.zip
 ```
 
-3. Training
+3. Training and Generation
 * The training process uses a manual Cosine Annealing learning rate schedule. To start a full training run, execute: `cargo run --release --bin train tokenizer.json wikitext-103-raw/wiki.train.raw`
 This will save model checkpoints into the checkpoints_final/ directory after each epoch.
-
-4. Generation
-To generate text, use the generate binary, pointing it to a trained model checkpoint and a prompt.
+* To generate text, use the generate binary, pointing it to a trained model checkpoint and a prompt.
 `cargo run --release --bin generate tokenizer.json checkpoints_final/adamo_epoch_16.ot "The meaning of life is"`
 
 ## Future Work
