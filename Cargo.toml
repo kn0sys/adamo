@@ -1,0 +1,30 @@
+[package]
+name = "adamo"
+version = "0.1.0"
+edition = "2024"
+authors = ["Nigel Christian <nigel.christian@hiahatf.org>", "Gemini"]
+documentation = "https://docs.rs/adamo"
+description = "Emergent self aware LLM research"
+repository = "https://github.com/kn0sys/adamo"
+license = "Apache-2.0"
+readme = "README.md"
+keywords = [
+    "nlp",
+    "deep-learning",
+    "machine-learning",
+    "transformers",
+    "llm"
+]
+categories = ["ai"]
+
+[lib]
+name = "adamo"
+path = "src/lib.rs"
+crate-type = ["lib"]
+
+[dependencies]
+bincode = { version = "2.0.1", features = ["serde"] }
+regex = "1.10.5"
+serde = { version = "1.0", features = ["derive"] }
+tch = "0.20.0"
+tokenizers = "0.21.1"

@@ -1,0 +1,121 @@
+// src/bin/train.rs
+
+use adamo::{
+    generative_model::GenerativeModel,
+    text_processing::TextProcessor,
+};
+use regex::Regex;
+use std::{env, error::Error, fs, path::Path, time::Instant};
+use tch::{nn, nn::{OptimizerConfig, ModuleT}, Device, Tensor};
+use std::f64::consts::PI;
+
+// The clean_text and text_to_batch helper functions remain the same...
+fn clean_text(text: &str) -> String {
+    let header_regex = Regex::new(r"=\s*[^=]+\s*=").unwrap();
+    let whitespace_regex = Regex::new(r"\s+").unwrap();
+    let cleaned = header_regex.replace_all(text, "");
+    let cleaned = whitespace_regex.replace_all(&cleaned, " ");
+    cleaned.trim().to_string()
+}
+
+fn text_to_batch(
+    processor: &TextProcessor,
+    text: &str,
+    device: Device,
+) -> Result<Option<(Tensor, Tensor)>, Box<dyn Error>> {
+    let encoding = processor.encode(text)?;
+    let token_ids: Vec<i64> = encoding.get_ids().iter().map(|&id| id as i64).collect();
+    if token_ids.len() < 2 { return Ok(None); }
+    let input_ids = &token_ids[..token_ids.len() - 1];
+    let target_ids = &token_ids[1..];
+    let xs = Tensor::f_from_slice(input_ids)?.to(device).view((1, -1));
+    let ys = Tensor::f_from_slice(target_ids)?.to(device).view([-1]);
+    Ok(Some((xs, ys)))
+}
+
+fn main() -> Result<(), Box<dyn Error>> {
+    println!("--- Adamo Deep Training (Final Run) ---");
+    let device = Device::Cpu;
+
+    // --- 1. Setup ---
+    let args: Vec<String> = env::args().collect();
+    if args.len() < 3 {
+        eprintln!("Usage: cargo run --bin train <tokenizer.json> <raw_training_text.txt>");
+        return Err("Missing required arguments".into());
+    }
+    let tokenizer_path = &args[1];
+    let training_data_path = &args[2];
+
+    let checkpoint_dir = "checkpoints_final"; // New directory for our best models
+    fs::create_dir_all(checkpoint_dir)?;
+
+    let processor = TextProcessor::new(tokenizer_path)?;
+    let vocab_size = processor.get_vocab_size() as i64;
+
+    let raw_text = fs::read_to_string(training_data_path)?;
+    let articles: Vec<&str> = raw_text.split("\n \n")
+        .filter(|s| !s.trim().is_empty() && s.len() > 200).collect();
+    println!("> Loaded {} articles for training.", articles.len());
+
+    // --- 2. Build the Model ---
+    let vs = nn::VarStore::new(device);
+    let d_model = 256;
+    let nhead = 4;
+    let num_layers = 4;
+    let dim_feedforward = 1024;
+    let generative_model = GenerativeModel::new(&vs, vocab_size, d_model, nhead, num_layers, dim_feedforward);
+
+    // --- CORRECTED: Use a more standard, lower initial learning rate ---
+    let initial_lr = 1e-4; // This is the key change.
+    let mut optimizer = nn::Adam::default().build(&vs, initial_lr)?;
+
+    println!("> Adamo Transformer Initialized with final learning rate schedule.");
+
+    // --- 3. Full Training Loop ---
+    println!("\n> Starting final deep training loop...");
+    let num_epochs = 20;
+    let total_steps = num_epochs * articles.len();
+    let mut current_step = 0;
+
+    for epoch in 1..=num_epochs {
+        let epoch_start_time = Instant::now();
+        let mut total_loss = 0.0;
+
+        let mut final_lr = 0.0;
+        for article in &articles {
+            current_step += 1;
+            let new_lr = initial_lr * (1.0 + (PI * current_step as f64 / total_steps as f64).cos()) / 2.0;
+            optimizer.set_lr(new_lr);
+
+            let cleaned_article = clean_text(article);
+            if let Some((xs, ys)) = text_to_batch(&processor, &cleaned_article, device)? {
+                let logits = generative_model.forward_t(&xs, true);
+                let loss = logits.view([-1, vocab_size]).cross_entropy_for_logits(&ys);
+
+                optimizer.zero_grad();
+                loss.backward();
+                optimizer.step();
+                final_lr = new_lr;
+                total_loss += loss.double_value(&[]);
+            }
+        }
+
+        if !articles.is_empty() {
+            let avg_loss = total_loss / articles.len() as f64;
+            println!(
+                "  - Epoch: {:<3} | Avg. Loss: {:.4} | LR: {:.6} | Duration: {:?}",
+                epoch,
+                avg_loss,
+                final_lr,
+                epoch_start_time.elapsed()
+            );
+
+            let checkpoint_path = Path::new(checkpoint_dir).join(format!("adamo_epoch_{}.ot", epoch));
+            vs.save(&checkpoint_path)?;
+            println!("    > Checkpoint saved to: {:?}", checkpoint_path);
+        }
+    }
+
+    println!("\n--- Deep Training Complete ---");
+    Ok(())
+}
