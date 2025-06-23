@@ -4,12 +4,13 @@ use adamo::{
     generative_model::GenerativeModel,
     text_processing::TextProcessor,
 };
+use anyhow::Result; // Use anyhow consistently
 use regex::Regex;
-use std::{env, error::Error, fs, path::Path, time::Instant};
+use std::{env, fs, path::Path, time::Instant};
 use tch::{nn, nn::{OptimizerConfig, ModuleT}, Device, Tensor};
 use std::f64::consts::PI;
 
-// The clean_text and text_to_batch helper functions remain the same...
+/// Cleans raw text from the dataset.
 fn clean_text(text: &str) -> String {
     let header_regex = Regex::new(r"=\s*[^=]+\s*=").unwrap();
     let whitespace_regex = Regex::new(r"\s+").unwrap();
@@ -18,22 +19,29 @@ fn clean_text(text: &str) -> String {
     cleaned.trim().to_string()
 }
 
+// CORRECTED: Return type is now anyhow::Result
 fn text_to_batch(
     processor: &TextProcessor,
     text: &str,
     device: Device,
-) -> Result<Option<(Tensor, Tensor)>, Box<dyn Error>> {
+) -> Result<Option<(Tensor, Tensor)>> {
     let encoding = processor.encode(text)?;
     let token_ids: Vec<i64> = encoding.get_ids().iter().map(|&id| id as i64).collect();
-    if token_ids.len() < 2 { return Ok(None); }
+
+    if token_ids.len() < 2 {
+        return Ok(None);
+    }
+
     let input_ids = &token_ids[..token_ids.len() - 1];
     let target_ids = &token_ids[1..];
+
     let xs = Tensor::f_from_slice(input_ids)?.to(device).view((1, -1));
     let ys = Tensor::f_from_slice(target_ids)?.to(device).view([-1]);
+
     Ok(Some((xs, ys)))
 }
 
-fn main() -> Result<(), Box<dyn Error>> {
+fn main() -> Result<()> {
     println!("--- Adamo Deep Training (Final Run) ---");
     let device = Device::Cpu;
 
@@ -41,20 +49,17 @@ fn main() -> Result<(), Box<dyn Error>> {
     let args: Vec<String> = env::args().collect();
     if args.len() < 3 {
         eprintln!("Usage: cargo run --bin train <tokenizer.json> <raw_training_text.txt>");
-        return Err("Missing required arguments".into());
+        return Err(anyhow::anyhow!("Missing required arguments"));
     }
     let tokenizer_path = &args[1];
-    let training_data_path = &args[2];
-
-    let checkpoint_dir = "checkpoints_final"; // New directory for our best models
+    let training_data_path = Path::new(&args[2]);
+    let checkpoint_dir = "checkpoints_final";
     fs::create_dir_all(checkpoint_dir)?;
 
     let processor = TextProcessor::new(tokenizer_path)?;
     let vocab_size = processor.get_vocab_size() as i64;
 
-    let raw_text = fs::read_to_string(training_data_path)?;
-    let articles: Vec<&str> = raw_text.split("\n \n")
-        .filter(|s| !s.trim().is_empty() && s.len() > 200).collect();
+    let articles = load_articles_from_file(training_data_path)?;
     println!("> Loaded {} articles for training.", articles.len());
 
     // --- 2. Build the Model ---
@@ -65,8 +70,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let dim_feedforward = 1024;
     let generative_model = GenerativeModel::new(&vs, vocab_size, d_model, nhead, num_layers, dim_feedforward);
 
-    // --- CORRECTED: Use a more standard, lower initial learning rate ---
-    let initial_lr = 1e-4; // This is the key change.
+    let initial_lr = 1e-4;
     let mut optimizer = nn::Adam::default().build(&vs, initial_lr)?;
 
     println!("> Adamo Transformer Initialized with final learning rate schedule.");
@@ -118,4 +122,29 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("\n--- Deep Training Complete ---");
     Ok(())
+}
+
+// This function needs to be moved here from the previous version or be in its own module.
+// For simplicity, we'll include it directly in the binary.
+fn load_articles_from_file(file_path: &Path) -> Result<Vec<String>> {
+    let extension = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
+
+    match extension {
+        "raw" | "txt" => {
+            println!("> Detected plain text file (.raw/.txt). Reading content...");
+            let raw_text = fs::read_to_string(file_path)?;
+            Ok(raw_text
+                .split("\n \n")
+                .map(|s| s.to_string())
+                .collect())
+        }
+        "parquet" => {
+            // Parquet reading logic would go here. For now, we keep the focus on fixing the text pipeline.
+            // Let's defer adding the parquet-specific dependencies until we use them.
+            anyhow::bail!("Parquet support is not fully implemented in this version yet.")
+        }
+        _ => {
+            anyhow::bail!("Unsupported file type: '{}'. Please use .raw or .txt", extension);
+        }
+    }
 }

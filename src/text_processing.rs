@@ -1,36 +1,39 @@
 // src/text_processing.rs
 
-//! This module bridges the gap between raw text and the model.
+//! This module bridges the gap between raw text and the UFF.
 //! It handles tokenizing text and converting it into a structured `Frame`.
 
 use crate::{Distinction, Frame, ReferenceStructure};
+use anyhow::{anyhow, Result}; // Import `anyhow!` macro
 use tokenizers::{tokenizer::Tokenizer, Encoding};
 use std::path::Path;
 
-/// `TextProcessor` is responsible for converting text to and from`Frame`s.
+/// `TextProcessor` is responsible for converting text to and from UFF `Frame`s.
 pub struct TextProcessor {
     pub tokenizer: Tokenizer,
 }
 
 impl TextProcessor {
     /// Creates a new processor from a local tokenizer file.
-    pub fn new<P: AsRef<Path>>(tokenizer_path: P) -> Result<Self, Box<dyn std::error::Error>> {
-        let tokenizer = Tokenizer::from_file(tokenizer_path)
-            .map_err(|e| Box::<dyn std::error::Error>::from(format!("Failed to load tokenizer: {}", e)))?;
+    pub fn new<P: AsRef<Path>>(tokenizer_path: P) -> Result<Self> {
+        let tokenizer = Tokenizer::from_file(tokenizer_path.as_ref())
+            // CORRECTED: Use `map_err` to explicitly convert the error type.
+            .map_err(|e| anyhow!("Failed to load tokenizer from {:?}: {}", tokenizer_path.as_ref(), e))?;
         Ok(Self { tokenizer })
     }
 
     /// Exposes the tokenizer's encoding functionality.
-    pub fn encode(&self, text: &str) -> Result<Encoding, Box<dyn std::error::Error>> {
+    pub fn encode(&self, text: &str) -> Result<Encoding> {
         self.tokenizer.encode(text, false)
-            .map_err(|e| e.to_string().into())
+            // CORRECTED: Use `map_err` for explicit error conversion.
+            .map_err(|e| anyhow!("Tokenizer failed to encode text: {}", e))
     }
 
-    // CORRECTED: Added the missing public decode method.
     /// Decodes a slice of token IDs back into a string.
-    pub fn decode(&self, ids: &[u32]) -> Result<String, Box<dyn std::error::Error>> {
+    pub fn decode(&self, ids: &[u32]) -> Result<String> {
         self.tokenizer.decode(ids, true)
-            .map_err(|e| e.to_string().into())
+            // CORRECTED: Use `map_err` for explicit error conversion.
+            .map_err(|e| anyhow!("Tokenizer failed to decode IDs: {}", e))
     }
 
     /// Exposes the tokenizer's vocabulary size.
@@ -38,13 +41,13 @@ impl TextProcessor {
         self.tokenizer.get_vocab_size(true)
     }
 
-    /// Converts a string of text into a `Frame`.
-    pub fn text_to_frame(&self, text: &str) -> Result<Frame, Box<dyn std::error::Error>> {
+    /// Converts a string of text into a UFF `Frame`.
+    pub fn text_to_frame(&self, text: &str) -> Result<Frame> {
         let encoding = self.encode(text)?;
         let tokens = encoding.get_tokens();
 
         if tokens.is_empty() {
-            return Err("Cannot create a frame from empty text.".into());
+            anyhow::bail!("Cannot create a frame from empty text.");
         }
 
         let root_distinction = Distinction::new(&tokens[0]);
@@ -56,7 +59,7 @@ impl TextProcessor {
              let new_structure = ReferenceStructure::from_source_and_target(
                  &last_source,
                  &new_target,
-                 (i + 1) as u32
+                 (i + 1) as u32,
              );
              structures.push(new_structure);
              last_source = new_target;
@@ -96,9 +99,7 @@ mod tests {
         let processor = TextProcessor::new(setup_tokenizer_path()).unwrap();
         let text = "hello world";
         let frame = processor.text_to_frame(text).unwrap();
-
         assert_eq!(frame.structures.len(), 1);
-
         let structure = &frame.structures[0];
         assert_eq!(structure.source().id(), Distinction::new("hello").id());
         assert_eq!(structure.target().id(), Distinction::new("world").id());
@@ -107,9 +108,20 @@ mod tests {
     #[test]
     fn can_decode_tokens() {
         let processor = TextProcessor::new(setup_tokenizer_path()).unwrap();
-        let ids = &[1010, 2023, 2003, 1012]; // " ,  there is ."
+        let ids = &[1010, 2023, 2003, 1012];
         let decoded_text = processor.decode(ids);
         assert!(decoded_text.is_ok());
         assert_eq!(decoded_text.unwrap(), ", this is.");
+    }
+
+    #[test]
+    fn more_complex_text_is_converted() {
+        let processor = TextProcessor::new(setup_tokenizer_path()).unwrap();
+        let text = "a logical framework";
+        let frame = processor.text_to_frame(text).unwrap();
+        assert_eq!(frame.structures.len(), 2);
+        let s1 = &frame.structures[0];
+        let s2 = &frame.structures[1];
+        assert_eq!(s1.target(), s2.source());
     }
 }
