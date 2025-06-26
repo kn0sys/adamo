@@ -5,12 +5,15 @@ use adamo::{
     text_processing::TextProcessor,
 };
 use anyhow::{anyhow, Result};
-use arrow::array::StringArray;
+use arrow::array::{Array, ListArray, StringArray, StructArray};
 use parquet::arrow::arrow_reader::ParquetRecordBatchReaderBuilder;
 use regex::Regex;
 use std::{env, fs::{self, File}, path::Path, time::Instant};
 use tch::{nn, nn::{OptimizerConfig, ModuleT}, Device, Tensor};
 use std::f64::consts::PI;
+
+// --- NEW: Define a constant for our model's context window ---
+const MAX_SEQ_LEN: usize = 4096;
 
 /// Cleans raw text from the dataset.
 fn clean_text(text: &str) -> String {
@@ -25,33 +28,57 @@ fn clean_text(text: &str) -> String {
 fn load_articles_from_file(file_path: &Path) -> Result<Vec<String>> {
     let extension = file_path.extension().and_then(|s| s.to_str()).unwrap_or("");
     match extension {
-        "raw" | "txt" => { /* unchanged */ Ok(fs::read_to_string(file_path)?.split("\n \n").map(|s| s.to_string()).collect()) }
-        "parquet" => { /* unchanged */
+        "raw" | "txt" => { /* unchanged */
+            Ok(fs::read_to_string(file_path)?.split("\n \n").map(|s| s.to_string()).collect())
+        }
+        "parquet" => {
             let file = File::open(file_path)?;
             let builder = ParquetRecordBatchReaderBuilder::try_new(file)?;
-            let text_column_name = "text";
-            if builder.schema().field_with_name(text_column_name).is_err() { anyhow::bail!("Parquet file must contain a column named '{}'", text_column_name); }
+            let messages_column_name = "messages";
+            if builder.schema().field_with_name(messages_column_name).is_err() { anyhow::bail!("Parquet file '{}' must contain a column named '{}'", file_path.display(), messages_column_name); }
+
             let reader = builder.build()?;
             let mut articles = Vec::new();
             for record_batch in reader {
                 let record_batch = record_batch?;
-                let text_column = record_batch.column_by_name(text_column_name).unwrap().as_any().downcast_ref::<StringArray>().unwrap();
-                for text_val in text_column.iter() { if let Some(text) = text_val { articles.push(text.to_string()); } }
+                if let Some(list_array) = record_batch.column_by_name(messages_column_name).and_then(|c| c.as_any().downcast_ref::<ListArray>()) {
+                    for i in 0..list_array.len() {
+                        if list_array.is_valid(i) {
+                            if let Some(struct_array) = list_array.value(i).as_any().downcast_ref::<StructArray>() {
+                                if let Some(content_array) = struct_array.column_by_name("content").and_then(|c| c.as_any().downcast_ref::<StringArray>()) {
+                                    let conversation = content_array.iter().filter_map(|val| val.map(ToString::to_string)).collect::<Vec<_>>().join(" ");
+                                    articles.push(conversation);
+                                }
+                            }
+                        }
+                    }
+                }
             }
             Ok(articles)
         }
-        _ => { anyhow::bail!("Unsupported file type: '{}'. Please use .raw, .txt, or .parquet", extension); }
+        _ => { anyhow::bail!("Unsupported file type: '{}'.", extension); }
     }
 }
 
+// CORRECTED: This function now truncates long sequences.
 fn text_to_batch(
     processor: &TextProcessor,
     text: &str,
     device: Device,
 ) -> Result<Option<(Tensor, Tensor)>> {
-    let encoding = processor.encode(text)?;
-    let token_ids: Vec<i64> = encoding.get_ids().iter().map(|&id| id as i64).collect();
+    let mut token_ids: Vec<i64> = processor.encode(text)?
+        .get_ids()
+        .iter()
+        .map(|&id| id as i64)
+        .collect();
+
+    // Truncate the sequence if it's too long.
+    if token_ids.len() > MAX_SEQ_LEN {
+        token_ids.truncate(MAX_SEQ_LEN);
+    }
+
     if token_ids.len() < 2 { return Ok(None); }
+
     let input_ids = &token_ids[..token_ids.len() - 1];
     let target_ids = &token_ids[1..];
     let xs = Tensor::f_from_slice(input_ids)?.to(device).view((1, -1));
@@ -85,7 +112,6 @@ fn main() -> Result<()> {
 
     // --- 2. Build the Model ---
     let vs = nn::VarStore::new(device);
-    // Let's use a slightly smaller model better suited for CPU training
     let d_model = 256;
     let nhead = 4;
     let num_layers = 4;
@@ -99,10 +125,9 @@ fn main() -> Result<()> {
 
     // --- 3. Training Loop with Optimizations ---
     println!("\n> Starting deep training loop...");
-    let num_epochs = 20;
-    // --- NEW: Gradient Accumulation Setup ---
-    let accumulation_steps = 8; // Simulate a batch size 8 times larger
-    let clip_grad_norm = 1.0;   // Gradient clipping value
+    let num_epochs = 30;
+    let accumulation_steps = 8;
+    let clip_grad_norm = 1.0;
 
     let total_training_steps = num_epochs * (all_articles.len() / accumulation_steps);
     let mut current_step = 0;
@@ -112,7 +137,7 @@ fn main() -> Result<()> {
         let mut total_loss = 0.0;
         let mut article_idx = 0;
 
-        optimizer.zero_grad(); // Zero the gradients at the start of the epoch
+        optimizer.zero_grad();
 
         let mut final_lr = 0.0;
         for article in &all_articles {
@@ -121,21 +146,17 @@ fn main() -> Result<()> {
                 let logits = generative_model.forward_t(&xs, true);
                 let loss = logits.view([-1, vocab_size]).cross_entropy_for_logits(&ys);
 
-                // Accumulate loss for a more stable average
                 total_loss += loss.double_value(&[]);
 
-                // Scale the loss by accumulation steps and backpropagate
                 (loss / accumulation_steps as f64).backward();
 
                 article_idx += 1;
-                // --- NEW: Optimizer Step after accumulating gradients ---
+
                 if article_idx % accumulation_steps == 0 {
-                    // Clip gradients to prevent explosions
                     optimizer.clip_grad_norm(clip_grad_norm);
                     optimizer.step();
-                    optimizer.zero_grad(); // Zero grads after stepping
+                    optimizer.zero_grad();
 
-                    // Update learning rate (we step on accumulated batches)
                     current_step += 1;
                     let new_lr = initial_lr * (1.0 + (PI * current_step as f64 / total_training_steps as f64).cos()) / 2.0;
                     optimizer.set_lr(new_lr);

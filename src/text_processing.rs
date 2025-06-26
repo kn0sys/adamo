@@ -1,6 +1,6 @@
 // src/text_processing.rs
 
-//! This module bridges the gap between raw text and the UFF.
+//! This module bridges the gap between raw text and the framwork.
 //! It handles tokenizing text and converting it into a structured `Frame`.
 
 use crate::{Distinction, Frame, ReferenceStructure};
@@ -8,7 +8,7 @@ use anyhow::{anyhow, Result}; // Import `anyhow!` macro
 use tokenizers::{tokenizer::Tokenizer, Encoding};
 use std::path::Path;
 
-/// `TextProcessor` is responsible for converting text to and from UFF `Frame`s.
+/// `TextProcessor` is responsible for converting text to and from `Frame`s.
 pub struct TextProcessor {
     pub tokenizer: Tokenizer,
 }
@@ -41,7 +41,7 @@ impl TextProcessor {
         self.tokenizer.get_vocab_size(true)
     }
 
-    /// Converts a string of text into a UFF `Frame`.
+    /// Converts a string of text into a `Frame`.
     pub fn text_to_frame(&self, text: &str) -> Result<Frame> {
         let encoding = self.encode(text)?;
         let tokens = encoding.get_tokens();
