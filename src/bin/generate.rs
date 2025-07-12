@@ -12,7 +12,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let device = Device::Cpu;
 
     // --- 1. Setup ---
-    // CORRECTED: Removed the unused argument for 'k'. The argument order is now correct.
     let args: Vec<String> = env::args().collect();
     if args.len() < 4 {
         eprintln!("Usage: cargo run --bin generate <tokenizer.json> <model_weights.ot> \"<prompt>\"");
@@ -36,7 +35,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     println!("> Model {} loaded.", model_path);
 
-    // --- 3. Initialize the AGIF LLM ---
+    // --- 3. Initialize the Adamo LLM ---
     let frame = processor.text_to_frame(prompt)?;
     let agif_llm = AdamoLlm::new(frame, generative_model);
 
@@ -44,14 +43,14 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut token_ids = processor.encode(prompt)?.get_ids().iter().map(|&id| id as i64).collect::<Vec<_>>();
 
-    // --- 4. UFF-Guided Generation Loop with Top-p ---
+    // --- 4. Guided Generation Loop with Top-p ---
     let temperature = agif_llm.get_sampling_temperature();
 
     let top_p = if agif_llm.frame.model().quality > 0 { 0.92 } else { 0.98 };
 
     println!("> Frame quality: {}, Complexity: {}", agif_llm.frame.model().quality, agif_llm.frame.model().complexity);
-    println!("> Using UFF-derived temperature: {:.4}", temperature);
-    println!("> Using UFF-derived Top-p: {:.2}", top_p);
+    println!("> Using derived temperature: {:.4}", temperature);
+    println!("> Using derived Top-p: {:.2}", top_p);
 
     print!("\n> Generated text: {}", prompt);
     std::io::stdout().flush()?;

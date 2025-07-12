@@ -87,18 +87,21 @@ fn text_to_batch(
 }
 
 fn main() -> Result<()> {
-    println!("--- Adamo CPU-Optimized Training ---");
+    println!("--- Adamo CPU-Optimized Training (with Checkpointing) ---");
     let device = Device::Cpu;
 
     // --- 1. Setup ---
     let args: Vec<String> = env::args().collect();
-    if args.len() < 4 {
-        eprintln!("Usage: cargo run --bin train <tokenizer.json> <output_model.ot> <file1> [file2]...");
+    // CORRECTED: The output model path is no longer needed as an argument.
+    if args.len() < 3 {
+        eprintln!("Usage: cargo run --bin train <tokenizer.json> <file1> [file2]...");
         return Err(anyhow!("Missing required arguments"));
     }
     let tokenizer_path = &args[1];
-    let output_model_path = &args[2];
-    let training_data_paths: Vec<&String> = args.iter().skip(3).collect();
+    let training_data_paths: Vec<&String> = args.iter().skip(2).collect();
+
+    let checkpoint_dir = "checkpoints_final";
+    fs::create_dir_all(checkpoint_dir)?;
 
     let processor = TextProcessor::new(tokenizer_path)?;
     let vocab_size = processor.get_vocab_size() as i64;
@@ -123,9 +126,9 @@ fn main() -> Result<()> {
 
     println!("> Adamo Transformer Initialized for CPU optimization.");
 
-    // --- 3. Training Loop with Optimizations ---
+    // --- 3. Training Loop ---
     println!("\n> Starting deep training loop...");
-    let num_epochs = 30;
+    let num_epochs = 30; // Let's aim for 30
     let accumulation_steps = 8;
     let clip_grad_norm = 1.0;
 
@@ -147,16 +150,13 @@ fn main() -> Result<()> {
                 let loss = logits.view([-1, vocab_size]).cross_entropy_for_logits(&ys);
 
                 total_loss += loss.double_value(&[]);
-
                 (loss / accumulation_steps as f64).backward();
-
                 article_idx += 1;
 
                 if article_idx % accumulation_steps == 0 {
                     optimizer.clip_grad_norm(clip_grad_norm);
                     optimizer.step();
                     optimizer.zero_grad();
-
                     current_step += 1;
                     let new_lr = initial_lr * (1.0 + (PI * current_step as f64 / total_training_steps as f64).cos()) / 2.0;
                     optimizer.set_lr(new_lr);
@@ -174,11 +174,14 @@ fn main() -> Result<()> {
                 final_lr,
                 epoch_start_time.elapsed()
             );
+
+            // CORRECTED: Re-introduced the per-epoch checkpoint saving.
+            let checkpoint_path = Path::new(checkpoint_dir).join(format!("adamo_epoch_{}.ot", epoch));
+            vs.save(&checkpoint_path)?;
+            println!("    > Checkpoint saved to: {:?}", checkpoint_path);
         }
     }
 
-    vs.save(output_model_path)?;
-    println!("\n> Final model weights saved to {}", output_model_path);
     println!("\n--- Deep Training Complete ---");
     Ok(())
 }
